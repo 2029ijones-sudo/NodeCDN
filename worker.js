@@ -1,3 +1,10 @@
+// Add at the top of your worker.js
+import { createClient } from '@supabase/supabase-js'
+
+// Replace with your actual Supabase credentials
+const SUPABASE_URL = 'https://aehdpjpsmeppdwinhdos.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlaGRwanBzbWVwcGR3aW5oZG9zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NTIzOTksImV4cCI6MjA4NTEyODM5OX0.9vF6fQWHaZgt-buPv4ui-Lo6VisAPdBJiFZVik8WKGI'
+
 export default {
   async fetch(request, env) {
     try {
@@ -5,6 +12,9 @@ export default {
       const path = url.pathname;
       
       console.log('Request to:', path);
+      
+      // Initialize Supabase client
+      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       
       // Routes
       if (path === '/' || path === '/index.html') {
@@ -17,37 +27,16 @@ export default {
         return serveFileListJSX();
       }
       else if (path === '/src/App.jsx') {
-        return serveAppJSX(); // ADD THIS
+        return serveAppJSX();
       }
       else if (path === '/api/upload' && request.method === 'POST') {
-        return new Response(JSON.stringify({
-          success: true,
-          cdn_url: `https://${url.hostname}/cdn/test-file`,
-          message: 'Upload would work with R2'
-        }), { headers: { 'Content-Type': 'application/json' } });
+        return handleUpload(request, supabase);
       }
       else if (path === '/api/files' && request.method === 'GET') {
-        return new Response(JSON.stringify({
-          files: [
-            {
-              id: 'test-1',
-              name: 'example.js',
-              size: 1024,
-              type: 'application/javascript',
-              upload_time: new Date().toISOString(),
-              cdn_url: `https://${url.hostname}/cdn/test-1`
-            }
-          ]
-        }), { headers: { 'Content-Type': 'application/json' } });
+        return handleGetFiles(supabase);
       }
       else if (path.startsWith('/cdn/')) {
-        const fileId = path.split('/').pop();
-        return new Response(`// CDN File: ${fileId}\nconsole.log('Hello from CDN');`, {
-          headers: {
-            'Content-Type': 'application/javascript',
-            'Cache-Control': 'public, max-age=3600'
-          }
-        });
+        return handleCDN(path, supabase);
       }
       
       return new Response('Not Found', { status: 404 });
@@ -66,10 +55,10 @@ function serveIndex() {
   const html = `<!DOCTYPE html>
 <html>
 <head>
-    <title>CDN Platform</title>
+    <title>CDN Platform with Supabase</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script type="module" src="/src/App.jsx"></script> <!-- FIX: Import App.jsx -->
+    <script type="module" src="/src/App.jsx"></script>
     <style>
         body { font-family: Arial; padding: 20px; max-width: 800px; margin: 0 auto; }
         .upload-area { border: 2px dashed #ccc; padding: 40px; text-align: center; margin: 20px 0; border-radius: 10px; }
@@ -89,7 +78,6 @@ function serveIndex() {
   });
 }
 
-// ADD THIS FUNCTION
 function serveAppJSX() {
   const jsx = `
 import Upload from './Upload.jsx';
@@ -97,7 +85,7 @@ import FileList from './FileList.jsx';
 
 const App = () => {
   return React.createElement('div', null, [
-    React.createElement('h1', {key: 'title'}, '🚀 CDN Platform'),
+    React.createElement('h1', {key: 'title'}, '🚀 CDN Platform with Supabase'),
     React.createElement('p', {key: 'desc'}, 'Upload files and get CDN URLs instantly'),
     React.createElement(Upload, {key: 'upload'}),
     React.createElement(FileList, {key: 'filelist'})
@@ -112,8 +100,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
   });
 }
 
+// UPDATED: Upload.jsx with Supabase
 function serveUploadJSX() {
-  const jsx = `const Upload = () => {
+  const jsx = `import React from 'react';
+import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
+
+const Upload = () => {
   const [uploading, setUploading] = React.useState(false);
   
   const handleUpload = async (e) => {
@@ -125,14 +118,18 @@ function serveUploadJSX() {
       formData.append('file', file);
       
       try {
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData
+        const response = await axios.post('/api/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
         });
-        const data = await response.json();
-        alert(\`Uploaded: \${file.name}\\nURL: \${data.cdn_url}\\n\${data.message}\`);
+        
+        if (response.data.success) {
+          alert(\`✅ Uploaded: \${file.name}\\n🔗 Direct URL: \${response.data.directUrl}\\n🚀 CDN URL: \${response.data.cdnUrl}\`);
+          window.location.reload();
+        } else {
+          alert(\`❌ Upload failed: \${response.data.error}\`);
+        }
       } catch (error) {
-        alert(\`Failed: \${error.message}\`);
+        alert(\`❌ Error: \${error.message}\`);
       }
     }
     
@@ -147,9 +144,9 @@ function serveUploadJSX() {
       onChange: handleUpload,
       disabled: uploading
     }),
-    uploading && React.createElement('p', null, 'Uploading...'),
+    uploading && React.createElement('p', null, 'Uploading to Supabase...'),
     React.createElement('p', {style: {color: '#666', fontSize: '14px', marginTop: '10px'}}, 
-      'Note: Files are stored temporarily for demo. Add R2 for permanent storage.'
+      'Files are stored in Supabase Storage and served via CDN'
     )
   ]);
 };
@@ -161,15 +158,31 @@ export default Upload;`;
   });
 }
 
+// UPDATED: FileList.jsx with Supabase
 function serveFileListJSX() {
-  const jsx = `const FileList = () => {
+  const jsx = `import React from 'react';
+import axios from 'axios';
+import moment from 'moment';
+import _ from 'lodash';
+
+const FileList = () => {
   const [files, setFiles] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
   
   React.useEffect(() => {
-    fetch('/api/files')
-      .then(response => response.json())
-      .then(data => setFiles(data.files || []));
+    fetchFiles();
   }, []);
+  
+  const fetchFiles = async () => {
+    try {
+      const response = await axios.get('/api/files');
+      setFiles(response.data.files || []);
+    } catch (error) {
+      console.error('Error fetching files:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
   
   const formatSize = (bytes) => {
     if (bytes === 0) return '0 Bytes';
@@ -181,29 +194,48 @@ function serveFileListJSX() {
   
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
-    alert('Copied to clipboard!');
+    alert('✅ Copied to clipboard!');
+  };
+  
+  const formatDate = (dateString) => {
+    return moment(dateString).fromNow();
   };
   
   return React.createElement('div', null, [
-    React.createElement('h2', null, '📄 Uploaded Files'),
-    files.length === 0 ? 
-      React.createElement('p', null, 'No files uploaded yet. Upload some above!') :
-      files.map(file => 
-        React.createElement('div', { 
-          key: file.id, 
-          className: 'file-item'
-        }, [
-          React.createElement('strong', null, file.name),
-          React.createElement('p', null, \`\${formatSize(file.size)} • \${file.type}\`),
-          React.createElement('code', null, file.cdn_url),
-          React.createElement('button', {
-            onClick: () => copyToClipboard(file.cdn_url)
-          }, 'Copy URL'),
-          React.createElement('button', {
-            onClick: () => window.open(file.cdn_url, '_blank')
-          }, 'Open File')
-        ])
-      )
+    React.createElement('h2', null, '📄 Files in CDN'),
+    loading ? 
+      React.createElement('p', null, 'Loading files...') :
+      files.length === 0 ? 
+        React.createElement('p', null, 'No files uploaded yet. Upload some above!') :
+        _.chunk(files, 2).map((chunk, chunkIndex) =>
+          React.createElement('div', { 
+            key: chunkIndex,
+            style: { display: 'flex', gap: '20px', marginBottom: '20px' }
+          }, chunk.map(file =>
+            React.createElement('div', { 
+              key: file.id, 
+              className: 'file-item',
+              style: { flex: 1 }
+            }, [
+              React.createElement('strong', null, file.name),
+              React.createElement('p', null, 
+                \`\${formatSize(file.size)} • \${file.type} • \${formatDate(file.updated)}\`
+              ),
+              React.createElement('code', null, file.cdnUrl),
+              React.createElement('div', {style: {marginTop: '10px'}}, [
+                React.createElement('button', {
+                  onClick: () => copyToClipboard(file.cdnUrl),
+                  style: {background: '#2ecc71'}
+                }, 'Copy URL'),
+                ' ',
+                React.createElement('button', {
+                  onClick: () => window.open(file.cdnUrl, '_blank'),
+                  style: {background: '#3498db'}
+                }, 'Open File')
+              ])
+            ])
+          )
+        )
   ]);
 };
 
@@ -212,4 +244,132 @@ export default FileList;`;
   return new Response(jsx, { 
     headers: { 'Content-Type': 'application/javascript' } 
   });
+}
+
+// NEW: Handle upload to Supabase
+async function handleUpload(request, supabase) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get('file');
+    
+    if (!file) {
+      return Response.json({ success: false, error: 'No file provided' });
+    }
+    
+    const fileId = crypto.randomUUID();
+    const fileName = \`\${fileId}-\${file.name.replace(/[^a-zA-Z0-9.]/g, '-')}\`;
+    const fileBuffer = await file.arrayBuffer();
+    
+    // Upload to Supabase Storage
+    const { data, error } = await supabase.storage
+      .from('cdn-files')
+      .upload(fileName, fileBuffer, {
+        contentType: file.type,
+        upsert: false
+      });
+    
+    if (error) {
+      throw new Error(\`Supabase upload error: \${error.message}\`);
+    }
+    
+    // Get public URL from Supabase
+    const { data: { publicUrl } } = supabase.storage
+      .from('cdn-files')
+      .getPublicUrl(fileName);
+    
+    // Also provide a CDN URL through your worker
+    const cdnUrl = \`https://\${request.headers.get('host')}/cdn/\${fileName}\`;
+    
+    return Response.json({
+      success: true,
+      fileId: fileId,
+      fileName: file.name,
+      size: file.size,
+      type: file.type,
+      directUrl: publicUrl,
+      cdnUrl: cdnUrl,
+      message: 'File uploaded successfully to Supabase Storage'
+    });
+    
+  } catch (error) {
+    console.error('Upload error:', error);
+    return Response.json({ 
+      success: false, 
+      error: error.message 
+    }, { status: 500 });
+  }
+}
+
+// NEW: Get files from Supabase
+async function handleGetFiles(supabase) {
+  try {
+    const { data: files, error } = await supabase.storage
+      .from('cdn-files')
+      .list();
+    
+    if (error) throw error;
+    
+    const fileList = await Promise.all(files.map(async (file) => {
+      const { data: { publicUrl } } = supabase.storage
+        .from('cdn-files')
+        .getPublicUrl(file.name);
+      
+      // Get file metadata
+      const { data: metadata } = await supabase.storage
+        .from('cdn-files')
+        .getPublicUrl(file.name);
+      
+      return {
+        id: file.id,
+        name: file.name.split('-').slice(1).join('-'), // Remove UUID prefix
+        originalName: file.name,
+        size: file.metadata?.size || 0,
+        type: file.metadata?.mimetype || 'unknown',
+        cdnUrl: \`https://\${new URL(publicUrl).host}/cdn/\${file.name}\`,
+        directUrl: publicUrl,
+        updated: file.updated_at
+      };
+    }));
+    
+    return Response.json({ files: fileList });
+  } catch (error) {
+    console.error('Get files error:', error);
+    return Response.json({ 
+      files: [],
+      error: error.message 
+    });
+  }
+}
+
+// NEW: Handle CDN requests
+async function handleCDN(path, supabase) {
+  const fileName = path.split('/').pop();
+  
+  try {
+    // Get the public URL from Supabase
+    const { data: { publicUrl } } = supabase.storage
+      .from('cdn-files')
+      .getPublicUrl(fileName);
+    
+    // Fetch the file from Supabase
+    const response = await fetch(publicUrl);
+    
+    if (!response.ok) {
+      throw new Error('File not found in Supabase');
+    }
+    
+    // Return the file with caching headers
+    return new Response(response.body, {
+      headers: {
+        'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=31536000',
+        'Access-Control-Allow-Origin': '*',
+        'X-CDN-Source': 'Supabase Storage'
+      }
+    });
+    
+  } catch (error) {
+    console.error('CDN error:', error);
+    return new Response('File not found', { status: 404 });
+  }
 }
