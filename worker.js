@@ -1,4 +1,3 @@
-// Add at the top of your worker.js
 import { createClient } from '@supabase/supabase-js'
 
 // Replace with your actual Supabase credentials
@@ -123,13 +122,13 @@ const Upload = () => {
         });
         
         if (response.data.success) {
-          alert(\`✅ Uploaded: \${file.name}\\n🔗 Direct URL: \${response.data.directUrl}\\n🚀 CDN URL: \${response.data.cdnUrl}\`);
+          alert('✅ Uploaded: ' + file.name + '\\n🔗 Direct URL: ' + response.data.directUrl + '\\n🚀 CDN URL: ' + response.data.cdnUrl);
           window.location.reload();
         } else {
-          alert(\`❌ Upload failed: \${response.data.error}\`);
+          alert('❌ Upload failed: ' + response.data.error);
         }
       } catch (error) {
-        alert(\`❌ Error: \${error.message}\`);
+        alert('❌ Error: ' + error.message);
       }
     }
     
@@ -219,7 +218,7 @@ const FileList = () => {
             }, [
               React.createElement('strong', null, file.name),
               React.createElement('p', null, 
-                \`\${formatSize(file.size)} • \${file.type} • \${formatDate(file.updated)}\`
+                formatSize(file.size) + ' • ' + file.type + ' • ' + formatDate(file.updated)
               ),
               React.createElement('code', null, file.cdnUrl),
               React.createElement('div', {style: {marginTop: '10px'}}, [
@@ -257,7 +256,7 @@ async function handleUpload(request, supabase) {
     }
     
     const fileId = crypto.randomUUID();
-    const fileName = \`\${fileId}-\${file.name.replace(/[^a-zA-Z0-9.]/g, '-')}\`;
+    const fileName = `${fileId}-${file.name.replace(/[^a-zA-Z0-9.]/g, '-')}`;
     const fileBuffer = await file.arrayBuffer();
     
     // Upload to Supabase Storage
@@ -269,7 +268,7 @@ async function handleUpload(request, supabase) {
       });
     
     if (error) {
-      throw new Error(\`Supabase upload error: \${error.message}\`);
+      throw new Error(`Supabase upload error: ${error.message}`);
     }
     
     // Get public URL from Supabase
@@ -278,7 +277,7 @@ async function handleUpload(request, supabase) {
       .getPublicUrl(fileName);
     
     // Also provide a CDN URL through your worker
-    const cdnUrl = \`https://\${request.headers.get('host')}/cdn/\${fileName}\`;
+    const cdnUrl = `https://${request.headers.get('host')}/cdn/${fileName}`;
     
     return Response.json({
       success: true,
@@ -314,18 +313,13 @@ async function handleGetFiles(supabase) {
         .from('cdn-files')
         .getPublicUrl(file.name);
       
-      // Get file metadata
-      const { data: metadata } = await supabase.storage
-        .from('cdn-files')
-        .getPublicUrl(file.name);
-      
       return {
         id: file.id,
         name: file.name.split('-').slice(1).join('-'), // Remove UUID prefix
         originalName: file.name,
         size: file.metadata?.size || 0,
         type: file.metadata?.mimetype || 'unknown',
-        cdnUrl: \`https://\${new URL(publicUrl).host}/cdn/\${file.name}\`,
+        cdnUrl: `https://${new URL(publicUrl).host}/cdn/${file.name}`,
         directUrl: publicUrl,
         updated: file.updated_at
       };
