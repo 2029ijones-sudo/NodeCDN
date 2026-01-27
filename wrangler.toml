@@ -2,8 +2,10 @@ name = "nodecdn"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
+[observability]
+enabled = true
+
 [[d1_databases]]
 binding = "DB"
 database_name = "cdn-files"
 database_id = "ab95b05d-56ab-420a-b9cb-82c1bb9468b2"
-
