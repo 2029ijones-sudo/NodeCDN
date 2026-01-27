@@ -56,7 +56,20 @@ function serveIndex() {
     <title>CDN Platform with Supabase</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script type="module" src="/src/App.jsx"></script>
+    <!-- Use a script tag instead of module import -->
+    <script>
+      // Load App.jsx as a regular script
+      fetch('/src/App.jsx')
+        .then(res => res.text())
+        .then(code => {
+          // Create a script element with the code
+          const script = document.createElement('script');
+          script.type = 'module';
+          script.textContent = code;
+          document.head.appendChild(script);
+        })
+        .catch(err => console.error('Failed to load App.jsx:', err));
+    </script>
     <style>
         body { font-family: Arial; padding: 20px; max-width: 800px; margin: 0 auto; }
         .upload-area { border: 2px dashed #ccc; padding: 40px; text-align: center; margin: 20px 0; border-radius: 10px; }
@@ -76,27 +89,37 @@ function serveIndex() {
   });
 }
 
-// FIXED: App.jsx - properly imports from the worker URLs
+// App.jsx - MUST use import() for dynamic imports
 function serveAppJSX() {
   const jsx = `
-// This is App.jsx - served from /src/App.jsx
-import Upload from '/src/Upload.jsx';
-import FileList from '/src/FileList.jsx';
-
-const App = () => {
-  return React.createElement('div', null, [
-    React.createElement('h1', {key: 'title'}, '🚀 CDN Platform with Supabase'),
-    React.createElement('p', {key: 'desc'}, 'Upload files and get CDN URLs instantly'),
-    React.createElement(Upload, {key: 'upload'}),
-    React.createElement(FileList, {key: 'filelist'})
-  ]);
+// App.jsx - Using dynamic imports for Cloudflare Worker compatibility
+const loadComponents = async () => {
+  // Dynamically import Upload component
+  const uploadModule = await import('/src/Upload.jsx');
+  const Upload = uploadModule.default;
+  
+  // Dynamically import FileList component  
+  const fileListModule = await import('/src/FileList.jsx');
+  const FileList = fileListModule.default;
+  
+  const App = () => {
+    return React.createElement('div', null, [
+      React.createElement('h1', {key: 'title'}, '🚀 CDN Platform with Supabase'),
+      React.createElement('p', {key: 'desc'}, 'Upload files and get CDN URLs instantly'),
+      React.createElement(Upload, {key: 'upload'}),
+      React.createElement(FileList, {key: 'filelist'})
+    ]);
+  };
+  
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(React.createElement(App));
 };
 
-export default App;
-
-// IMPORTANT: We need to manually render since this is a module
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(React.createElement(App));
+// Start loading components
+loadComponents().catch(err => {
+  console.error('Failed to load components:', err);
+  document.getElementById('root').innerHTML = '<p style="color: red">Failed to load application. Check console.</p>';
+});
 `;
   
   return new Response(jsx, { 
@@ -104,10 +127,10 @@ root.render(React.createElement(App));
   });
 }
 
-// FIXED: Upload.jsx - uses React.createElement properly
+// Upload.jsx - Must be ES module compatible
 function serveUploadJSX() {
   const jsx = `
-// This is Upload.jsx - served from /src/Upload.jsx
+// Upload.jsx - ES Module
 const Upload = () => {
   const [uploading, setUploading] = React.useState(false);
   
@@ -163,10 +186,10 @@ export default Upload;
   });
 }
 
-// FIXED: FileList.jsx - uses React.createElement properly
+// FileList.jsx - Must be ES module compatible
 function serveFileListJSX() {
   const jsx = `
-// This is FileList.jsx - served from /src/FileList.jsx
+// FileList.jsx - ES Module
 const FileList = () => {
   const [files, setFiles] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
