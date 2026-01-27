@@ -1,0 +1,12 @@
+name = "cdn-platform"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cdn-files"
+database_id = "auto-generated"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "cdn-files"
