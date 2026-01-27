@@ -6,7 +6,7 @@ export default {
       
       console.log('Request to:', path);
       
-      // Routes - SIMPLIFIED VERSION
+      // Routes
       if (path === '/' || path === '/index.html') {
         return serveIndex();
       }
@@ -16,15 +16,17 @@ export default {
       else if (path === '/src/FileList.jsx') {
         return serveFileListJSX();
       }
+      else if (path === '/src/App.jsx') {
+        return serveAppJSX(); // ADD THIS
+      }
       else if (path === '/api/upload' && request.method === 'POST') {
         return new Response(JSON.stringify({
           success: true,
           cdn_url: `https://${url.hostname}/cdn/test-file`,
-          message: 'Upload would work with R2, but using D1 only for now'
+          message: 'Upload would work with R2'
         }), { headers: { 'Content-Type': 'application/json' } });
       }
       else if (path === '/api/files' && request.method === 'GET') {
-        // Return test data instead of querying D1
         return new Response(JSON.stringify({
           files: [
             {
@@ -39,7 +41,6 @@ export default {
         }), { headers: { 'Content-Type': 'application/json' } });
       }
       else if (path.startsWith('/cdn/')) {
-        // Return sample file
         const fileId = path.split('/').pop();
         return new Response(`// CDN File: ${fileId}\nconsole.log('Hello from CDN');`, {
           headers: {
@@ -68,26 +69,14 @@ function serveIndex() {
     <title>CDN Platform</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script>
-      // Simple inline React app
-      const App = () => {
-        return React.createElement('div', {style: {padding: '20px'}}, [
-          React.createElement('h1', null, '🚀 CDN Platform'),
-          React.createElement('p', null, 'Worker is running!'),
-          React.createElement('button', {
-            onClick: () => alert('Upload feature needs R2 storage')
-          }, 'Test Upload'),
-          React.createElement('button', {
-            onClick: () => window.open('/cdn/test-file', '_blank')
-          }, 'Test CDN URL')
-        ]);
-      };
-      
-      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
-    </script>
+    <script type="module" src="/src/App.jsx"></script> <!-- FIX: Import App.jsx -->
     <style>
-        body { font-family: Arial; padding: 20px; }
-        button { margin: 10px; padding: 10px 20px; }
+        body { font-family: Arial; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .upload-area { border: 2px dashed #ccc; padding: 40px; text-align: center; margin: 20px 0; border-radius: 10px; }
+        .file-item { padding: 15px; border: 1px solid #ddd; margin: 10px 0; border-radius: 5px; }
+        button { background: #0066cc; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        input[type="file"] { margin: 10px 0; padding: 10px; }
+        code { background: #f5f5f5; padding: 5px; display: block; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -97,6 +86,29 @@ function serveIndex() {
   
   return new Response(html, { 
     headers: { 'Content-Type': 'text/html' } 
+  });
+}
+
+// ADD THIS FUNCTION
+function serveAppJSX() {
+  const jsx = `
+import Upload from './Upload.jsx';
+import FileList from './FileList.jsx';
+
+const App = () => {
+  return React.createElement('div', null, [
+    React.createElement('h1', {key: 'title'}, '🚀 CDN Platform'),
+    React.createElement('p', {key: 'desc'}, 'Upload files and get CDN URLs instantly'),
+    React.createElement(Upload, {key: 'upload'}),
+    React.createElement(FileList, {key: 'filelist'})
+  ]);
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+`;
+  
+  return new Response(jsx, { 
+    headers: { 'Content-Type': 'application/javascript' } 
   });
 }
 
@@ -118,7 +130,7 @@ function serveUploadJSX() {
           body: formData
         });
         const data = await response.json();
-        alert(\`Uploaded: \${file.name}\\nMessage: \${data.message}\`);
+        alert(\`Uploaded: \${file.name}\\nURL: \${data.cdn_url}\\n\${data.message}\`);
       } catch (error) {
         alert(\`Failed: \${error.message}\`);
       }
@@ -127,8 +139,8 @@ function serveUploadJSX() {
     setUploading(false);
   };
   
-  return React.createElement('div', { style: { border: '2px dashed #ccc', padding: '40px', textAlign: 'center' } }, [
-    React.createElement('h2', null, '📁 Upload Files'),
+  return React.createElement('div', { className: 'upload-area' }, [
+    React.createElement('h2', null, '📁 Upload Files to CDN'),
     React.createElement('input', {
       type: 'file',
       multiple: true,
@@ -136,8 +148,9 @@ function serveUploadJSX() {
       disabled: uploading
     }),
     uploading && React.createElement('p', null, 'Uploading...'),
-    React.createElement('p', {style: {color: '#666', fontSize: '14px'}}, 
-      'Note: File storage requires R2 bucket configuration')
+    React.createElement('p', {style: {color: '#666', fontSize: '14px', marginTop: '10px'}}, 
+      'Note: Files are stored temporarily for demo. Add R2 for permanent storage.'
+    )
   ]);
 };
 
@@ -158,20 +171,34 @@ function serveFileListJSX() {
       .then(data => setFiles(data.files || []));
   }, []);
   
+  const formatSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+  
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    alert('Copied to clipboard!');
+  };
+  
   return React.createElement('div', null, [
-    React.createElement('h2', null, '📄 Example Files'),
+    React.createElement('h2', null, '📄 Uploaded Files'),
     files.length === 0 ? 
-      React.createElement('p', null, 'No files available. Upload some!') :
+      React.createElement('p', null, 'No files uploaded yet. Upload some above!') :
       files.map(file => 
         React.createElement('div', { 
           key: file.id, 
-          style: { border: '1px solid #ddd', padding: '10px', margin: '5px 0' }
+          className: 'file-item'
         }, [
           React.createElement('strong', null, file.name),
-          React.createElement('p', null, \`\${file.size} bytes • \${file.type}\`),
-          React.createElement('code', {style: {display: 'block', background: '#f5f5f5', padding: '5px'}}, 
-            file.cdn_url
-          ),
+          React.createElement('p', null, \`\${formatSize(file.size)} • \${file.type}\`),
+          React.createElement('code', null, file.cdn_url),
+          React.createElement('button', {
+            onClick: () => copyToClipboard(file.cdn_url)
+          }, 'Copy URL'),
           React.createElement('button', {
             onClick: () => window.open(file.cdn_url, '_blank')
           }, 'Open File')
