@@ -18,15 +18,6 @@ export default {
       if (path === '/' || path === '/index.html') {
         return serveIndex();
       }
-      else if (path === '/src/Upload.jsx') {
-        return serveUploadJSX();
-      }
-      else if (path === '/src/FileList.jsx') {
-        return serveFileListJSX();
-      }
-      else if (path === '/src/App.jsx') {
-        return serveAppJSX();
-      }
       else if (path === '/api/upload' && request.method === 'POST') {
         return handleUpload(request, supabase);
       }
@@ -56,19 +47,137 @@ function serveIndex() {
     <title>CDN Platform with Supabase</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <!-- Use a script tag instead of module import -->
     <script>
-      // Load App.jsx as a regular script
-      fetch('/src/App.jsx')
-        .then(res => res.text())
-        .then(code => {
-          // Create a script element with the code
-          const script = document.createElement('script');
-          script.type = 'module';
-          script.textContent = code;
-          document.head.appendChild(script);
-        })
-        .catch(err => console.error('Failed to load App.jsx:', err));
+      // Simple inline React app - NO .jsx files needed
+      const { useState, useEffect } = React;
+      
+      const Upload = () => {
+        const [uploading, setUploading] = useState(false);
+        
+        const handleUpload = async (e) => {
+          const files = Array.from(e.target.files);
+          setUploading(true);
+          
+          for (const file of files) {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+              const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+              });
+              const data = await response.json();
+              
+              if (data.success) {
+                alert('Uploaded: ' + file.name + '\\nDirect URL: ' + data.directUrl + '\\nCDN URL: ' + data.cdnUrl);
+                window.location.reload();
+              } else {
+                alert('Upload failed: ' + data.error);
+              }
+            } catch (error) {
+              alert('Error: ' + error.message);
+            }
+          }
+          
+          setUploading(false);
+        };
+        
+        return React.createElement('div', { 
+          className: 'upload-area',
+          style: { border: '2px dashed #ccc', padding: '40px', textAlign: 'center', margin: '20px 0', borderRadius: '10px' }
+        }, [
+          React.createElement('h2', null, 'Upload Files to CDN'),
+          React.createElement('input', {
+            type: 'file',
+            multiple: true,
+            onChange: handleUpload,
+            disabled: uploading
+          }),
+          uploading && React.createElement('p', null, 'Uploading to Supabase...'),
+          React.createElement('p', {style: {color: '#666', fontSize: '14px', marginTop: '10px'}}, 
+            'Files are stored in Supabase Storage and served via CDN'
+          )
+        ]);
+      };
+      
+      const FileList = () => {
+        const [files, setFiles] = useState([]);
+        const [loading, setLoading] = useState(true);
+        
+        useEffect(() => {
+          fetchFiles();
+        }, []);
+        
+        const fetchFiles = async () => {
+          try {
+            const response = await fetch('/api/files');
+            const data = await response.json();
+            setFiles(data.files || []);
+          } catch (error) {
+            console.error('Error fetching files:', error);
+          } finally {
+            setLoading(false);
+          }
+        };
+        
+        const formatSize = (bytes) => {
+          if (bytes === 0) return '0 Bytes';
+          const k = 1024;
+          const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+          const i = Math.floor(Math.log(bytes) / Math.log(k));
+          return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        };
+        
+        const copyToClipboard = (text) => {
+          navigator.clipboard.writeText(text);
+          alert('Copied to clipboard!');
+        };
+        
+        return React.createElement('div', null, [
+          React.createElement('h2', null, 'Files in CDN'),
+          loading ? 
+            React.createElement('p', null, 'Loading files...') :
+            files.length === 0 ? 
+              React.createElement('p', null, 'No files uploaded yet. Upload some above!') :
+              files.map(file => 
+                React.createElement('div', { 
+                  key: file.id, 
+                  className: 'file-item',
+                  style: { border: '1px solid #ddd', padding: '15px', margin: '10px 0', borderRadius: '5px' }
+                }, [
+                  React.createElement('strong', null, file.name),
+                  React.createElement('p', null, 
+                    formatSize(file.size) + ' • ' + file.type
+                  ),
+                  React.createElement('code', {style: {background: '#f5f5f5', padding: '5px', display: 'block', fontFamily: 'monospace'}}, 
+                    file.cdnUrl
+                  ),
+                  React.createElement('div', {style: {marginTop: '10px'}}, [
+                    React.createElement('button', {
+                      onClick: () => copyToClipboard(file.cdnUrl),
+                      style: {background: '#2ecc71', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '4px', margin: '5px'}
+                    }, 'Copy URL'),
+                    React.createElement('button', {
+                      onClick: () => window.open(file.cdnUrl, '_blank'),
+                      style: {background: '#3498db', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '4px', margin: '5px'}
+                    }, 'Open File')
+                  ])
+                ])
+              )
+        ]);
+      };
+      
+      const App = () => {
+        return React.createElement('div', {style: {fontFamily: 'Arial', padding: '20px', maxWidth: '800px', margin: '0 auto'}}, [
+          React.createElement('h1', {key: 'title'}, 'CDN Platform with Supabase'),
+          React.createElement('p', {key: 'desc'}, 'Upload files and get CDN URLs instantly'),
+          React.createElement(Upload, {key: 'upload'}),
+          React.createElement(FileList, {key: 'filelist'})
+        ]);
+      };
+      
+      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
     </script>
     <style>
         body { font-family: Arial; padding: 20px; max-width: 800px; margin: 0 auto; }
@@ -89,180 +198,6 @@ function serveIndex() {
   });
 }
 
-// App.jsx - MUST use import() for dynamic imports
-function serveAppJSX() {
-  const jsx = `
-// App.jsx - Using dynamic imports for Cloudflare Worker compatibility
-const loadComponents = async () => {
-  // Dynamically import Upload component
-  const uploadModule = await import('/src/Upload.jsx');
-  const Upload = uploadModule.default;
-  
-  // Dynamically import FileList component  
-  const fileListModule = await import('/src/FileList.jsx');
-  const FileList = fileListModule.default;
-  
-  const App = () => {
-    return React.createElement('div', null, [
-      React.createElement('h1', {key: 'title'}, '🚀 CDN Platform with Supabase'),
-      React.createElement('p', {key: 'desc'}, 'Upload files and get CDN URLs instantly'),
-      React.createElement(Upload, {key: 'upload'}),
-      React.createElement(FileList, {key: 'filelist'})
-    ]);
-  };
-  
-  const root = ReactDOM.createRoot(document.getElementById('root'));
-  root.render(React.createElement(App));
-};
-
-// Start loading components
-loadComponents().catch(err => {
-  console.error('Failed to load components:', err);
-  document.getElementById('root').innerHTML = '<p style="color: red">Failed to load application. Check console.</p>';
-});
-`;
-  
-  return new Response(jsx, { 
-    headers: { 'Content-Type': 'application/javascript' } 
-  });
-}
-
-// Upload.jsx - Must be ES module compatible
-function serveUploadJSX() {
-  const jsx = `
-// Upload.jsx - ES Module
-const Upload = () => {
-  const [uploading, setUploading] = React.useState(false);
-  
-  const handleUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    setUploading(true);
-    
-    for (const file of files) {
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      try {
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData
-        });
-        const data = await response.json();
-        
-        if (data.success) {
-          alert('✅ Uploaded: ' + file.name + '\\n🔗 Direct URL: ' + data.directUrl + '\\n🚀 CDN URL: ' + data.cdnUrl);
-          window.location.reload();
-        } else {
-          alert('❌ Upload failed: ' + data.error);
-        }
-      } catch (error) {
-        alert('❌ Error: ' + error.message);
-      }
-    }
-    
-    setUploading(false);
-  };
-  
-  return React.createElement('div', { className: 'upload-area' }, [
-    React.createElement('h2', null, '📁 Upload Files to CDN'),
-    React.createElement('input', {
-      type: 'file',
-      multiple: true,
-      onChange: handleUpload,
-      disabled: uploading
-    }),
-    uploading && React.createElement('p', null, 'Uploading to Supabase...'),
-    React.createElement('p', {style: {color: '#666', fontSize: '14px', marginTop: '10px'}}, 
-      'Files are stored in Supabase Storage and served via CDN'
-    )
-  ]);
-};
-
-export default Upload;
-`;
-  
-  return new Response(jsx, { 
-    headers: { 'Content-Type': 'application/javascript' } 
-  });
-}
-
-// FileList.jsx - Must be ES module compatible
-function serveFileListJSX() {
-  const jsx = `
-// FileList.jsx - ES Module
-const FileList = () => {
-  const [files, setFiles] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  
-  React.useEffect(() => {
-    fetchFiles();
-  }, []);
-  
-  const fetchFiles = async () => {
-    try {
-      const response = await fetch('/api/files');
-      const data = await response.json();
-      setFiles(data.files || []);
-    } catch (error) {
-      console.error('Error fetching files:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const formatSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-  
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    alert('✅ Copied to clipboard!');
-  };
-  
-  return React.createElement('div', null, [
-    React.createElement('h2', null, '📄 Files in CDN'),
-    loading ? 
-      React.createElement('p', null, 'Loading files...') :
-      files.length === 0 ? 
-        React.createElement('p', null, 'No files uploaded yet. Upload some above!') :
-        files.map(file => 
-          React.createElement('div', { 
-            key: file.id, 
-            className: 'file-item'
-          }, [
-            React.createElement('strong', null, file.name),
-            React.createElement('p', null, 
-              formatSize(file.size) + ' • ' + file.type
-            ),
-            React.createElement('code', null, file.cdnUrl),
-            React.createElement('div', {style: {marginTop: '10px'}}, [
-              React.createElement('button', {
-                onClick: () => copyToClipboard(file.cdnUrl),
-                style: {background: '#2ecc71'}
-              }, 'Copy URL'),
-              ' ',
-              React.createElement('button', {
-                onClick: () => window.open(file.cdnUrl, '_blank'),
-                style: {background: '#3498db'}
-              }, 'Open File')
-            ])
-          ])
-        )
-  ]);
-};
-
-export default FileList;
-`;
-  
-  return new Response(jsx, { 
-    headers: { 'Content-Type': 'application/javascript' } 
-  });
-}
-
 async function handleUpload(request, supabase) {
   try {
     const formData = await request.formData();
@@ -273,7 +208,7 @@ async function handleUpload(request, supabase) {
     }
     
     const fileId = crypto.randomUUID();
-    const fileName = \`\${fileId}-\${file.name.replace(/[^a-zA-Z0-9.]/g, '-')}\`;
+    const fileName = fileId + '-' + file.name.replace(/[^a-zA-Z0-9.]/g, '-');
     const fileBuffer = await file.arrayBuffer();
     
     // Upload to Supabase Storage
@@ -285,7 +220,7 @@ async function handleUpload(request, supabase) {
       });
     
     if (error) {
-      throw new Error(\`Supabase upload error: \${error.message}\`);
+      throw new Error('Supabase upload error: ' + error.message);
     }
     
     // Get public URL from Supabase
@@ -294,7 +229,7 @@ async function handleUpload(request, supabase) {
       .getPublicUrl(fileName);
     
     // Also provide a CDN URL through your worker
-    const cdnUrl = \`https://\${request.headers.get('host')}/cdn/\${fileName}\`;
+    const cdnUrl = 'https://' + request.headers.get('host') + '/cdn/' + fileName;
     
     return Response.json({
       success: true,
@@ -335,7 +270,7 @@ async function handleGetFiles(supabase) {
         originalName: file.name,
         size: file.metadata?.size || 0,
         type: file.metadata?.mimetype || 'unknown',
-        cdnUrl: \`https://\${request.headers.get('host')}/cdn/\${file.name}\`,
+        cdnUrl: 'https://' + new URL(publicUrl).host + '/cdn/' + file.name,
         directUrl: publicUrl,
         updated: file.updated_at
       };
