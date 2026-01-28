@@ -42,6 +42,7 @@ export default {
 };
 
 function serveIndex() {
+  // Use regular quotes for the entire HTML string and escape properly
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -312,7 +313,7 @@ function serveIndex() {
           
           const successful = selectedFiles.filter(f => f.status === 'uploaded').length;
           if (successful > 0) {
-            alert(\`✅ \${successful} files uploaded! Page will refresh.\`);
+            alert('✅ ' + successful + ' files uploaded! Page will refresh.');
             setTimeout(() => window.location.reload(), 1500);
           }
         };
@@ -339,7 +340,7 @@ function serveIndex() {
           const items = [];
           
           for (const [name, item] of Object.entries(structure)) {
-            const fullPath = path ? \`\${path}/\${name}\` : name;
+            const fullPath = path ? path + '/' + name : name;
             
             if (item.type === 'folder') {
               items.push(
@@ -435,7 +436,7 @@ function serveIndex() {
             }),
             
             React.createElement('p', { style: { fontSize: '14px', color: '#666', marginTop: '10px' } },
-              \`\${selectedFiles.length} files selected\`
+              selectedFiles.length + ' files selected'
             )
           ]),
           
@@ -445,7 +446,7 @@ function serveIndex() {
               disabled: uploading,
               className: 'upload-btn',
               style: { padding: '12px 30px', fontSize: '16px' }
-            }, uploading ? 'Uploading...' : \`Upload All (\${selectedFiles.length} files)\`),
+            }, uploading ? 'Uploading...' : 'Upload All (' + selectedFiles.length + ' files)'),
             React.createElement('button', {
               onClick: clearAllFiles,
               disabled: uploading,
@@ -457,7 +458,7 @@ function serveIndex() {
             React.createElement('div', { key: 'folder-view', className: 'folder-view' }, [
               React.createElement('div', { className: 'folder-header' }, [
                 React.createElement('h3', null, '📁 Folder Structure'),
-                React.createElement('span', null, \`\${selectedFiles.length} items\`)
+                React.createElement('span', null, selectedFiles.length + ' items')
               ]),
               React.createElement('div', { className: 'folder-contents' },
                 renderFolderStructure(folderStructure)
@@ -534,7 +535,7 @@ function serveIndex() {
         
         return React.createElement('div', null, [
           React.createElement('h2', null, '📁 File Browser'),
-          React.createElement('p', null, \`\${files.length} files available\`),
+          React.createElement('p', null, files.length + ' files available'),
           
           viewingFile ? 
             React.createElement('div', { key: 'file-viewer', style: { margin: '20px 0' } }, [
@@ -596,7 +597,7 @@ function serveIndex() {
         ]);
       };
       
-      // Examples Tab
+      // Examples Tab - FIXED to use regular strings instead of template literals
       const ExamplesTab = () => {
         return React.createElement('div', null, [
           React.createElement('h2', null, '💡 How to Use This CDN'),
@@ -604,28 +605,12 @@ function serveIndex() {
           React.createElement('div', { style: { margin: '20px 0' } }, [
             React.createElement('h3', null, '📁 Folder Upload Example:'),
             React.createElement('pre', null, 
-\`project/
-├── index.html
-├── style.css
-├── script.js
-└── images/
-    └── logo.png
-
-Upload the entire folder, then use:
-
-<!-- In HTML -->
-<link rel="stylesheet" href="https://YOUR-CDN/cdn/project/style.css">
-<script src="https://YOUR-CDN/cdn/project/script.js"></script>
-<img src="https://YOUR-CDN/cdn/project/images/logo.png">\`
+'project/\n├── index.html\n├── style.css\n├── script.js\n└── images/\n    └── logo.png\n\nUpload the entire folder, then use:\n\n<!-- In HTML -->\n<link rel="stylesheet" href="https://YOUR-CDN/cdn/project/style.css">\n<script src="https://YOUR-CDN/cdn/project/script.js"></script>\n<img src="https://YOUR-CDN/cdn/project/images/logo.png">'
             ),
             
             React.createElement('h3', { style: { marginTop: '30px' } }, '📦 ZIP Package Example:'),
             React.createElement('pre', null,
-\`// Upload a ZIP file containing your library
-// Then users can access individual files:
-
-import { Component } from 'https://YOUR-CDN/cdn/my-library.zip/Component.js';
-// Note: ZIP browsing requires extracting on the client side\`
+'// Upload a ZIP file containing your library\n// Then users can access individual files:\n\nimport { Component } from \'https://YOUR-CDN/cdn/my-library.zip/Component.js\';\n// Note: ZIP browsing requires extracting on the client side'
             ),
             
             React.createElement('h3', { style: { marginTop: '30px' } }, '🚀 Quick Usage:'),
