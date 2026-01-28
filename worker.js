@@ -30,7 +30,7 @@ export default {
       
     } catch (error) {
       console.error('Worker error:', error);
-      return new Response(`Error: ${error.message}\nStack: ${error.stack}`, { 
+      return new Response(`Error: ${error.message}`, { 
         status: 500,
         headers: { 'Content-Type': 'text/plain' }
       });
@@ -59,8 +59,6 @@ function serveIndex() {
     
     <script>
       // SIMPLE REACT APP THAT ACTUALLY WORKS
-      console.log('Script loaded');
-      
       const { useState, useEffect } = React;
       
       // Upload Component
@@ -73,7 +71,7 @@ function serveIndex() {
           
           setUploading(true);
           
-          const file = files[0]; // Just upload first file for simplicity
+          const file = files[0];
           const formData = new FormData();
           formData.append('file', file);
           
@@ -85,13 +83,13 @@ function serveIndex() {
             const data = await response.json();
             
             if (data.success) {
-              alert('Uploaded: ' + file.name + '\\nCDN URL: ' + data.cdnUrl);
+              alert('✅ Uploaded: ' + file.name + '\\n🔗 URL: ' + data.cdnUrl);
               window.location.reload();
             } else {
-              alert('Upload failed: ' + data.error);
+              alert('❌ Upload failed: ' + data.error);
             }
           } catch (error) {
-            alert('Error: ' + error.message);
+            alert('❌ Error: ' + error.message);
           } finally {
             setUploading(false);
           }
@@ -100,7 +98,7 @@ function serveIndex() {
         return React.createElement('div', { 
           style: { border: '2px dashed #ccc', padding: '40px', textAlign: 'center', margin: '20px 0', borderRadius: '10px' }
         }, [
-          React.createElement('h2', null, 'Upload Files to CDN'),
+          React.createElement('h2', null, '📁 Upload Files to CDN'),
           React.createElement('input', {
             type: 'file',
             onChange: handleUpload,
@@ -130,7 +128,15 @@ function serveIndex() {
         
         const copyToClipboard = (text) => {
           navigator.clipboard.writeText(text);
-          alert('Copied to clipboard!');
+          alert('✅ Copied to clipboard!');
+        };
+        
+        const formatSize = (bytes) => {
+          if (bytes === 0) return '0 Bytes';
+          const k = 1024;
+          const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+          const i = Math.floor(Math.log(bytes) / Math.log(k));
+          return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         };
         
         if (loading) {
@@ -142,15 +148,15 @@ function serveIndex() {
         }
         
         return React.createElement('div', null, [
-          React.createElement('h2', null, 'Uploaded Files'),
+          React.createElement('h2', null, '📄 Uploaded Files'),
           ...files.map(file => 
             React.createElement('div', { 
               key: file.id,
               style: { border: '1px solid #ddd', padding: '15px', margin: '10px 0', borderRadius: '5px' }
             }, [
               React.createElement('strong', null, file.name),
-              React.createElement('p', null, file.size + ' bytes • ' + file.type),
-              React.createElement('code', {style: {display: 'block', background: '#f5f5f5', padding: '5px'}}, 
+              React.createElement('p', null, formatSize(file.size) + ' • ' + file.type),
+              React.createElement('code', {style: {display: 'block', background: '#f5f5f5', padding: '5px', margin: '5px 0'}}, 
                 file.cdnUrl
               ),
               React.createElement('div', {style: {marginTop: '10px'}}, [
@@ -159,7 +165,7 @@ function serveIndex() {
                   style: {background: '#2ecc71', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '4px', margin: '5px'}
                 }, 'Copy URL'),
                 React.createElement('button', {
-                  onClick: () => window.open(file.cdnUrl, '_blank'),
+                  onClick: () => window.open(file.directUrl, '_blank'),
                   style: {background: '#3498db', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '4px', margin: '5px'}
                 }, 'Open File')
               ])
@@ -171,22 +177,18 @@ function serveIndex() {
       // Main App Component
       const App = () => {
         return React.createElement('div', null, [
-          React.createElement('h1', null, 'CDN Platform'),
-          React.createElement('p', null, 'Upload files and get CDN URLs'),
+          React.createElement('h1', null, '🚀 CDN Platform'),
+          React.createElement('p', null, 'Upload files and get instant CDN URLs'),
           React.createElement(Upload, null),
           React.createElement(FileList, null)
         ]);
       };
       
-      // RENDER THE APP - THIS IS WHAT WAS MISSING
-      console.log('Rendering app...');
+      // RENDER THE APP
       const rootElement = document.getElementById('root');
       if (rootElement) {
         const root = ReactDOM.createRoot(rootElement);
         root.render(React.createElement(App));
-        console.log('App rendered successfully');
-      } else {
-        console.error('Root element not found');
       }
     </script>
 </body>
@@ -207,7 +209,9 @@ async function handleUpload(request, supabase) {
     }
     
     const fileId = crypto.randomUUID();
-    const fileName = fileId + '-' + file.name.replace(/[^a-zA-Z0-9.]/g, '-');
+    // Clean filename for Supabase
+    const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+    const fileName = fileId + '-' + cleanName;
     const fileBuffer = await file.arrayBuffer();
     
     console.log('Uploading to Supabase:', fileName, file.type, file.size);
@@ -225,14 +229,13 @@ async function handleUpload(request, supabase) {
       throw new Error('Supabase upload error: ' + error.message);
     }
     
-    // Get public URL from Supabase
+    // Get CORRECT public URL from Supabase
     const { data: { publicUrl } } = supabase.storage
       .from('cdn-files')
       .getPublicUrl(fileName);
     
-    // Also provide a CDN URL through your worker
-    const host = request.headers.get('host');
-    const cdnUrl = 'https://' + host + '/cdn/' + fileName;
+    // Correct CDN URL format
+    const cdnUrl = 'https://' + request.headers.get('host') + '/cdn/' + fileName;
     
     return Response.json({
       success: true,
@@ -240,8 +243,8 @@ async function handleUpload(request, supabase) {
       fileName: file.name,
       size: file.size,
       type: file.type,
-      directUrl: publicUrl,
-      cdnUrl: cdnUrl,
+      directUrl: publicUrl,  // This is the REAL Supabase URL
+      cdnUrl: cdnUrl,        // This is your worker proxy URL
       message: 'File uploaded successfully'
     });
     
@@ -281,7 +284,7 @@ async function handleGetFiles(supabase) {
         size: file.metadata?.size || 0,
         type: file.metadata?.mimetype || 'application/octet-stream',
         cdnUrl: 'https://' + new URL(publicUrl).host + '/cdn/' + file.name,
-        directUrl: publicUrl,
+        directUrl: publicUrl,  // This is the ACTUAL Supabase URL
         updated: file.updated_at
       };
     }));
@@ -307,18 +310,42 @@ async function handleCDN(path, supabase) {
   try {
     console.log('CDN request for:', fileName);
     
-    // Get the public URL from Supabase
+    // Get the CORRECT public URL from Supabase
     const { data: { publicUrl } } = supabase.storage
       .from('cdn-files')
       .getPublicUrl(fileName);
     
-    console.log('Redirecting to:', publicUrl);
+    console.log('Supabase URL:', publicUrl);
     
-    // Redirect to Supabase URL
-    return Response.redirect(publicUrl, 302);
+    // Fetch from Supabase and proxy it
+    const response = await fetch(publicUrl, {
+      headers: {
+        'Accept': '*/*'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Supabase returned ${response.status}: ${response.statusText}`);
+    }
+    
+    // Get the file data
+    const fileData = await response.arrayBuffer();
+    
+    // Return with proper headers
+    return new Response(fileData, {
+      headers: {
+        'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=31536000',
+        'Access-Control-Allow-Origin': '*',
+        'Content-Disposition': `inline; filename="${fileName.split('-').slice(1).join('-')}"`
+      }
+    });
     
   } catch (error) {
     console.error('CDN error:', error);
-    return new Response('File not found: ' + fileName, { status: 404 });
+    return new Response(`File not found: ${fileName}\nError: ${error.message}`, { 
+      status: 404,
+      headers: { 'Content-Type': 'text/plain' }
+    });
   }
 }
