@@ -25,9 +25,6 @@ export default {
       else if (path.startsWith('/cdn/')) {
         return await handleCDN(path, supabase);
       }
-      else if (path.startsWith('/browse/')) {
-        return await handleBrowse(path, supabase);
-      }
       
       return new Response('Not Found', { status: 404 });
       
@@ -42,82 +39,38 @@ export default {
 };
 
 function serveIndex() {
-  // Use regular quotes for the entire HTML string and escape properly
   const html = `<!DOCTYPE html>
 <html>
 <head>
-    <title>CDN Platform - Folder/ZIP Support</title>
+    <title>CDN Platform - Bulk Upload</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
     <style>
-        body { font-family: Arial; padding: 20px; max-width: 1000px; margin: 0 auto; }
+        body { font-family: Arial; padding: 20px; max-width: 800px; margin: 0 auto; }
         .upload-area { border: 2px dashed #ccc; padding: 40px; text-align: center; margin: 20px 0; border-radius: 10px; }
         .file-item { padding: 15px; border: 1px solid #ddd; margin: 10px 0; border-radius: 5px; }
-        .folder-view { background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; }
-        .folder-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .folder-contents { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
-        .folder-item { padding: 10px; background: white; border-radius: 5px; border: 1px solid #e0e0e0; }
-        .file-icon { font-size: 24px; margin-right: 10px; }
-        .folder-icon { color: #ffb74d; }
-        .zip-icon { color: #4caf50; }
-        .file-icon-text { color: #2196f3; }
+        .selected-files { margin: 20px 0; }
+        .selected-file { padding: 10px; background: #f8f9fa; margin: 5px 0; border-radius: 5px; }
         button { background: #0066cc; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin: 5px; }
-        .upload-btn { background: #2ecc71; }
-        .zip-btn { background: #9c27b0; }
-        .download-btn { background: #ff9800; }
+        .upload-all-btn { background: #2ecc71; font-weight: bold; padding: 12px 24px; }
+        .cancel-btn { background: #e74c3c; }
         input[type="file"] { margin: 10px 0; padding: 10px; }
-        code { background: #f5f5f5; padding: 5px; display: block; font-family: monospace; font-size: 12px; }
-        pre { background: #2d2d2d; color: white; padding: 15px; border-radius: 5px; overflow-x: auto; }
-        .tab { display: inline-block; padding: 10px 20px; cursor: pointer; border-bottom: 2px solid transparent; }
-        .tab.active { border-bottom-color: #0066cc; font-weight: bold; }
-        .dropzone { border: 2px dashed #4caf50; background: #f1f8e9; }
+        code { background: #f5f5f5; padding: 5px; display: block; font-family: monospace; font-size: 14px; }
+        .progress { height: 20px; background: #eee; border-radius: 10px; margin: 10px 0; overflow: hidden; }
+        .progress-bar { height: 100%; background: #3498db; transition: width 0.3s; }
     </style>
 </head>
 <body>
     <div id="root"></div>
     
     <script>
-      const { useState, useEffect, useRef } = React;
+      const { useState, useEffect } = React;
       
-      // Main App with Tabs
-      const App = () => {
-        const [activeTab, setActiveTab] = useState('upload');
-        
-        return React.createElement('div', null, [
-          React.createElement('h1', null, '📦 CDN Platform - Folder & ZIP Support'),
-          React.createElement('p', null, 'Upload folders/ZIPs and browse files like jsDelivr'),
-          
-          React.createElement('div', {style: {borderBottom: '1px solid #ddd', marginBottom: '20px'}}, [
-            React.createElement('span', {
-              className: activeTab === 'upload' ? 'tab active' : 'tab',
-              onClick: () => setActiveTab('upload'),
-              style: {marginRight: '20px'}
-            }, '📤 Upload'),
-            React.createElement('span', {
-              className: activeTab === 'browse' ? 'tab active' : 'tab',
-              onClick: () => setActiveTab('browse')
-            }, '📁 Browse Files'),
-            React.createElement('span', {
-              className: activeTab === 'examples' ? 'tab active' : 'tab',
-              onClick: () => setActiveTab('examples')
-            }, '💡 Examples')
-          ]),
-          
-          activeTab === 'upload' ? React.createElement(UploadTab, {key: 'upload'}) : null,
-          activeTab === 'browse' ? React.createElement(BrowseTab, {key: 'browse'}) : null,
-          activeTab === 'examples' ? React.createElement(ExamplesTab, {key: 'examples'}) : null
-        ]);
-      };
-      
-      // Upload Tab with folder/ZIP support
-      const UploadTab = () => {
+      // Upload Component with multiple file support
+      const Upload = () => {
         const [uploading, setUploading] = useState(false);
         const [selectedFiles, setSelectedFiles] = useState([]);
-        const [folderStructure, setFolderStructure] = useState({});
-        const fileInputRef = useRef(null);
-        const folderInputRef = useRef(null);
+        const [uploadProgress, setUploadProgress] = useState({});
         
         const handleFileSelect = (e) => {
           const files = Array.from(e.target.files);
@@ -129,128 +82,23 @@ function serveIndex() {
             name: file.name,
             size: file.size,
             type: file.type,
-            path: file.webkitRelativePath || file.name,
-            status: 'pending'
+            status: 'pending', // pending, uploading, uploaded, error
+            progress: 0,
+            cdnUrl: null,
+            error: null
           }));
           
           setSelectedFiles(prev => [...prev, ...newFiles]);
-          updateFolderStructure([...selectedFiles, ...newFiles]);
+          e.target.value = ''; // Reset file input
         };
         
-        const handleFolderSelect = async (e) => {
-          const files = Array.from(e.target.files);
-          if (files.length === 0) return;
-          
-          const newFiles = files.map(file => ({
-            id: crypto.randomUUID(),
-            file: file,
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            path: file.webkitRelativePath || file.name,
-            status: 'pending'
-          }));
-          
-          setSelectedFiles(prev => [...prev, ...newFiles]);
-          updateFolderStructure([...selectedFiles, ...newFiles]);
+        const removeFile = (id) => {
+          setSelectedFiles(prev => prev.filter(f => f.id !== id));
         };
         
-        const handleDrop = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          
-          const items = e.dataTransfer.items;
-          const files = [];
-          
-          for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            if (item.kind === 'file') {
-              const file = item.getAsFile();
-              if (item.webkitGetAsEntry) {
-                const entry = item.webkitGetAsEntry();
-                if (entry.isDirectory) {
-                  // Skip directories for now - browser doesn't give us files
-                  continue;
-                }
-              }
-              files.push(file);
-            }
-          }
-          
-          if (files.length > 0) {
-            const newFiles = files.map(file => ({
-              id: crypto.randomUUID(),
-              file: file,
-              name: file.name,
-              size: file.size,
-              type: file.type,
-              path: file.name,
-              status: 'pending'
-            }));
-            
-            setSelectedFiles(prev => [...prev, ...newFiles]);
-            updateFolderStructure([...selectedFiles, ...newFiles]);
-          }
-        };
-        
-        const updateFolderStructure = (files) => {
-          const structure = {};
-          
-          files.forEach(file => {
-            const path = file.path;
-            const parts = path.split('/');
-            let current = structure;
-            
-            for (let i = 0; i < parts.length; i++) {
-              const part = parts[i];
-              if (i === parts.length - 1) {
-                // File
-                current[part] = { type: 'file', ...file };
-              } else {
-                // Folder
-                if (!current[part]) {
-                  current[part] = { type: 'folder', contents: {} };
-                }
-                current = current[part].contents;
-              }
-            }
-          });
-          
-          setFolderStructure(structure);
-        };
-        
-        const createZip = async () => {
-          if (selectedFiles.length === 0) return;
-          
-          const zip = new JSZip();
-          
-          // Add files to ZIP
-          selectedFiles.forEach(fileObj => {
-            zip.file(fileObj.path, fileObj.file);
-          });
-          
-          // Generate ZIP
-          const content = await zip.generateAsync({ type: 'blob' });
-          
-          // Download ZIP
-          saveAs(content, 'cdn-files.zip');
-          
-          // Also offer to upload the ZIP
-          const zipFile = new File([content], 'cdn-files.zip', { type: 'application/zip' });
-          const zipFileObj = {
-            id: crypto.randomUUID(),
-            file: zipFile,
-            name: 'cdn-files.zip',
-            size: zipFile.size,
-            type: 'application/zip',
-            path: 'cdn-files.zip',
-            status: 'pending'
-          };
-          
-          setSelectedFiles(prev => [...prev, zipFileObj]);
-          updateFolderStructure([...selectedFiles, zipFileObj]);
-          
-          alert('ZIP created! You can now upload it.');
+        const clearAllFiles = () => {
+          setSelectedFiles([]);
+          setUploadProgress({});
         };
         
         const uploadAllFiles = async () => {
@@ -261,18 +109,29 @@ function serveIndex() {
           
           setUploading(true);
           
+          // Update all files to uploading status
+          setSelectedFiles(prev => prev.map(f => ({
+            ...f,
+            status: 'uploading',
+            progress: 0
+          })));
+          
+          let uploadedCount = 0;
+          const results = [];
+          
           for (let i = 0; i < selectedFiles.length; i++) {
             const fileObj = selectedFiles[i];
             
-            // Update status
-            setSelectedFiles(prev => prev.map(f => 
-              f.id === fileObj.id ? { ...f, status: 'uploading' } : f
-            ));
-            
             try {
+              // Update progress for this file
+              setSelectedFiles(prev => prev.map(f => 
+                f.id === fileObj.id ? { ...f, progress: 10 } : f
+              ));
+              
               const formData = new FormData();
               formData.append('file', fileObj.file);
               
+              // Send upload request
               const response = await fetch('/api/upload', {
                 method: 'POST',
                 body: formData
@@ -281,51 +140,62 @@ function serveIndex() {
               const data = await response.json();
               
               if (data.success) {
+                // Update file with success
                 setSelectedFiles(prev => prev.map(f => 
                   f.id === fileObj.id ? { 
                     ...f, 
-                    status: 'uploaded',
+                    status: 'uploaded', 
+                    progress: 100,
                     cdnUrl: data.cdnUrl,
                     directUrl: data.directUrl
                   } : f
                 ));
+                results.push({ name: fileObj.name, success: true, url: data.cdnUrl });
               } else {
+                // Update file with error
                 setSelectedFiles(prev => prev.map(f => 
                   f.id === fileObj.id ? { 
                     ...f, 
-                    status: 'error',
+                    status: 'error', 
+                    progress: 0,
                     error: data.error
                   } : f
                 ));
+                results.push({ name: fileObj.name, success: false, error: data.error });
               }
+              
             } catch (error) {
+              // Update file with error
               setSelectedFiles(prev => prev.map(f => 
                 f.id === fileObj.id ? { 
                   ...f, 
-                  status: 'error',
+                  status: 'error', 
+                  progress: 0,
                   error: error.message
                 } : f
               ));
+              results.push({ name: fileObj.name, success: false, error: error.message });
             }
+            
+            uploadedCount++;
+            
+            // Update overall progress
+            const overallProgress = Math.round((uploadedCount / selectedFiles.length) * 100);
+            setUploadProgress({ overall: overallProgress });
           }
           
           setUploading(false);
           
-          const successful = selectedFiles.filter(f => f.status === 'uploaded').length;
+          // Show summary
+          const successful = results.filter(r => r.success).length;
+          const failed = results.filter(r => !r.success).length;
+          
           if (successful > 0) {
-            alert('✅ ' + successful + ' files uploaded! Page will refresh.');
-            setTimeout(() => window.location.reload(), 1500);
+            alert(\`✅ Upload complete!\\n\\nSuccessful: \${successful} files\\nFailed: \${failed} files\\n\\nPage will reload to show new files.\`);
+            setTimeout(() => window.location.reload(), 2000);
+          } else if (failed > 0) {
+            alert(\`❌ All uploads failed. Check console for details.\`);
           }
-        };
-        
-        const removeFile = (id) => {
-          setSelectedFiles(prev => prev.filter(f => f.id !== id));
-          updateFolderStructure(selectedFiles.filter(f => f.id !== id));
-        };
-        
-        const clearAllFiles = () => {
-          setSelectedFiles([]);
-          setFolderStructure({});
         };
         
         const formatSize = (bytes) => {
@@ -336,148 +206,155 @@ function serveIndex() {
           return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         };
         
-        const renderFolderStructure = (structure, path = '') => {
-          const items = [];
-          
-          for (const [name, item] of Object.entries(structure)) {
-            const fullPath = path ? path + '/' + name : name;
-            
-            if (item.type === 'folder') {
-              items.push(
-                React.createElement('div', { key: fullPath, className: 'folder-item' }, [
-                  React.createElement('span', { className: 'file-icon folder-icon' }, '📁'),
-                  React.createElement('strong', null, name + '/'),
-                  React.createElement('div', { style: { marginLeft: '20px', marginTop: '10px' } },
-                    renderFolderStructure(item.contents, fullPath)
-                  )
-                ])
-              );
-            } else {
-              items.push(
-                React.createElement('div', { key: fullPath, className: 'folder-item' }, [
-                  React.createElement('span', { className: 'file-icon file-icon-text' }, '📄'),
-                  React.createElement('div', { style: { display: 'inline-block' } }, [
-                    React.createElement('div', null, [
-                      React.createElement('strong', null, name),
-                      React.createElement('span', { style: { marginLeft: '10px', fontSize: '12px', color: '#666' } },
-                        formatSize(item.size)
-                      )
-                    ]),
-                    item.status === 'uploaded' && 
-                      React.createElement('code', { style: { fontSize: '11px', marginTop: '5px' } }, item.cdnUrl)
-                  ]),
-                  React.createElement('button', {
-                    onClick: () => removeFile(item.id),
-                    style: { 
-                      float: 'right', 
-                      background: 'transparent', 
-                      color: '#e74c3c',
-                      padding: '2px 8px',
-                      fontSize: '12px'
-                    }
-                  }, '✕')
-                ])
-              );
-            }
+        const getStatusColor = (status) => {
+          switch(status) {
+            case 'uploaded': return '#2ecc71';
+            case 'uploading': return '#3498db';
+            case 'error': return '#e74c3c';
+            default: return '#95a5a6';
           }
-          
-          return items;
+        };
+        
+        const getStatusText = (status) => {
+          switch(status) {
+            case 'uploaded': return '✅ Uploaded';
+            case 'uploading': return '⏳ Uploading...';
+            case 'error': return '❌ Error';
+            default: return '📄 Ready';
+          }
         };
         
         return React.createElement('div', null, [
-          React.createElement('div', {
+          React.createElement('div', { 
             key: 'upload-area',
-            className: 'upload-area',
-            onDragOver: (e) => { e.preventDefault(); e.currentTarget.classList.add('dropzone'); },
-            onDragLeave: (e) => { e.currentTarget.classList.remove('dropzone'); },
-            onDrop: (e) => { 
-              e.preventDefault(); 
-              e.currentTarget.classList.remove('dropzone'); 
-              handleDrop(e); 
-            }
+            style: { border: '2px dashed #ccc', padding: '40px', textAlign: 'center', margin: '20px 0', borderRadius: '10px' }
           }, [
-            React.createElement('h2', null, '📤 Upload Files/Folders'),
-            React.createElement('p', null, 'Drag & drop, select files, or select a folder'),
-            
-            React.createElement('div', { style: { margin: '20px 0' } }, [
-              React.createElement('button', {
-                onClick: () => fileInputRef.current?.click(),
-                className: 'upload-btn',
-                style: { marginRight: '10px' }
-              }, 'Select Files'),
-              React.createElement('button', {
-                onClick: () => folderInputRef.current?.click(),
-                className: 'upload-btn'
-              }, 'Select Folder'),
-              selectedFiles.length > 0 && 
-                React.createElement('button', {
-                  onClick: createZip,
-                  className: 'zip-btn',
-                  style: { marginLeft: '10px' }
-                }, 'Create ZIP')
-            ]),
-            
+            React.createElement('h2', null, '📁 Upload Multiple Files to CDN'),
+            React.createElement('p', null, 'Select multiple files at once (Ctrl+Click or drag & drop)'),
             React.createElement('input', {
-              ref: fileInputRef,
               type: 'file',
               multiple: true,
               onChange: handleFileSelect,
-              style: { display: 'none' }
+              disabled: uploading,
+              style: { padding: '15px', fontSize: '16px' }
             }),
             
-            React.createElement('input', {
-              ref: folderInputRef,
-              type: 'file',
-              webkitdirectory: true,
-              directory: true,
-              multiple: true,
-              onChange: handleFolderSelect,
-              style: { display: 'none' }
-            }),
+            uploading && uploadProgress.overall && 
+              React.createElement('div', {key: 'progress', style: {margin: '20px 0'}}, [
+                React.createElement('p', null, \`Uploading: \${uploadProgress.overall}%\`),
+                React.createElement('div', {className: 'progress'}, 
+                  React.createElement('div', {
+                    className: 'progress-bar',
+                    style: {width: \`\${uploadProgress.overall}%\`}
+                  })
+                )
+              ])
+          ]),
+          
+          selectedFiles.length > 0 && React.createElement('div', {key: 'selected-files', className: 'selected-files'}, [
+            React.createElement('div', {style: {display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px'}}, [
+              React.createElement('h3', null, \`Selected Files (\${selectedFiles.length})\`),
+              React.createElement('div', null, [
+                selectedFiles.some(f => f.status === 'pending') && 
+                  React.createElement('button', {
+                    onClick: uploadAllFiles,
+                    disabled: uploading,
+                    className: 'upload-all-btn',
+                    style: {marginRight: '10px'}
+                  }, uploading ? 'Uploading...' : \`Upload All (\${selectedFiles.length} files)\`),
+                
+                React.createElement('button', {
+                  onClick: clearAllFiles,
+                  disabled: uploading,
+                  className: 'cancel-btn'
+                }, 'Clear All')
+              ])
+            ]),
             
-            React.createElement('p', { style: { fontSize: '14px', color: '#666', marginTop: '10px' } },
-              selectedFiles.length + ' files selected'
+            ...selectedFiles.map(fileObj => 
+              React.createElement('div', {
+                key: fileObj.id,
+                className: 'selected-file',
+                style: { 
+                  borderLeft: \`4px solid \${getStatusColor(fileObj.status)}\`,
+                  opacity: fileObj.status === 'uploaded' ? 0.8 : 1
+                }
+              }, [
+                React.createElement('div', {style: {display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}, [
+                  React.createElement('div', null, [
+                    React.createElement('strong', null, fileObj.name),
+                    React.createElement('p', {style: {margin: '5px 0', fontSize: '14px', color: '#666'}}, 
+                      \`\${formatSize(fileObj.size)} • \${fileObj.type || 'Unknown type'}\`
+                    )
+                  ]),
+                  
+                  React.createElement('div', {style: {textAlign: 'right'}}, [
+                    React.createElement('span', {
+                      style: { 
+                        color: getStatusColor(fileObj.status),
+                        fontWeight: 'bold',
+                        fontSize: '14px'
+                      }
+                    }, getStatusText(fileObj.status)),
+                    
+                    fileObj.status !== 'uploading' && 
+                      React.createElement('button', {
+                        onClick: () => removeFile(fileObj.id),
+                        disabled: uploading,
+                        style: { 
+                          background: 'transparent', 
+                          color: '#e74c3c', 
+                          padding: '5px 10px',
+                          fontSize: '12px',
+                          marginLeft: '10px'
+                        }
+                      }, '✕')
+                  ])
+                ]),
+                
+                fileObj.status === 'uploading' && 
+                  React.createElement('div', {className: 'progress', style: {marginTop: '10px'}}, 
+                    React.createElement('div', {
+                      className: 'progress-bar',
+                      style: {width: \`\${fileObj.progress}%\`}
+                    })
+                  ),
+                
+                fileObj.status === 'uploaded' && fileObj.cdnUrl &&
+                  React.createElement('div', {style: {marginTop: '10px'}}, [
+                    React.createElement('code', {style: {fontSize: '12px'}}, fileObj.cdnUrl),
+                    React.createElement('button', {
+                      onClick: () => navigator.clipboard.writeText(fileObj.cdnUrl),
+                      style: { 
+                        background: '#2ecc71', 
+                        color: 'white', 
+                        border: 'none', 
+                        padding: '5px 10px',
+                        fontSize: '12px',
+                        marginTop: '5px',
+                        borderRadius: '3px'
+                      }
+                    }, 'Copy URL')
+                  ]),
+                
+                fileObj.status === 'error' && fileObj.error &&
+                  React.createElement('p', {style: {color: '#e74c3c', fontSize: '12px', marginTop: '5px'}}, 
+                    \`Error: \${fileObj.error}\`
+                  )
+              ])
             )
-          ]),
-          
-          selectedFiles.length > 0 && React.createElement('div', { key: 'actions', style: { margin: '20px 0' } }, [
-            React.createElement('button', {
-              onClick: uploadAllFiles,
-              disabled: uploading,
-              className: 'upload-btn',
-              style: { padding: '12px 30px', fontSize: '16px' }
-            }, uploading ? 'Uploading...' : 'Upload All (' + selectedFiles.length + ' files)'),
-            React.createElement('button', {
-              onClick: clearAllFiles,
-              disabled: uploading,
-              style: { background: '#e74c3c', marginLeft: '10px' }
-            }, 'Clear All')
-          ]),
-          
-          Object.keys(folderStructure).length > 0 && 
-            React.createElement('div', { key: 'folder-view', className: 'folder-view' }, [
-              React.createElement('div', { className: 'folder-header' }, [
-                React.createElement('h3', null, '📁 Folder Structure'),
-                React.createElement('span', null, selectedFiles.length + ' items')
-              ]),
-              React.createElement('div', { className: 'folder-contents' },
-                renderFolderStructure(folderStructure)
-              )
-            ])
+          ])
         ]);
       };
       
-      // Browse Tab - Like jsDelivr file browser
-      const BrowseTab = () => {
+      // FileList Component
+      const FileList = () => {
         const [files, setFiles] = useState([]);
         const [loading, setLoading] = useState(true);
-        const [currentPath, setCurrentPath] = useState('');
-        const [fileContent, setFileContent] = useState('');
-        const [viewingFile, setViewingFile] = useState(null);
         
         useEffect(() => {
           fetchFiles();
-        }, [currentPath]);
+        }, []);
         
         const fetchFiles = async () => {
           try {
@@ -491,19 +368,9 @@ function serveIndex() {
           }
         };
         
-        const viewFile = async (file) => {
-          try {
-            setViewingFile(file);
-            const response = await fetch(file.directUrl);
-            if (response.ok) {
-              const text = await response.text();
-              setFileContent(text.substring(0, 5000)); // Limit preview
-            } else {
-              setFileContent('Cannot preview this file type');
-            }
-          } catch (error) {
-            setFileContent('Error loading file: ' + error.message);
-          }
+        const copyToClipboard = (text) => {
+          navigator.clipboard.writeText(text);
+          alert('✅ Copied to clipboard!');
         };
         
         const formatSize = (bytes) => {
@@ -512,17 +379,6 @@ function serveIndex() {
           const sizes = ['Bytes', 'KB', 'MB', 'GB'];
           const i = Math.floor(Math.log(bytes) / Math.log(k));
           return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        };
-        
-        const getFileIcon = (fileName, fileType) => {
-          if (fileName.endsWith('.zip')) return '📦';
-          if (fileName.endsWith('.js')) return '📜';
-          if (fileName.endsWith('.jsx')) return '⚛️';
-          if (fileName.endsWith('.html')) return '🌐';
-          if (fileName.endsWith('.css')) return '🎨';
-          if (fileName.endsWith('.json')) return '📋';
-          if (fileType.includes('image')) return '🖼️';
-          return '📄';
         };
         
         if (loading) {
@@ -534,99 +390,58 @@ function serveIndex() {
         }
         
         return React.createElement('div', null, [
-          React.createElement('h2', null, '📁 File Browser'),
-          React.createElement('p', null, files.length + ' files available'),
-          
-          viewingFile ? 
-            React.createElement('div', { key: 'file-viewer', style: { margin: '20px 0' } }, [
-              React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' } }, [
-                React.createElement('h3', null, [
-                  React.createElement('span', { style: { marginRight: '10px' } }, getFileIcon(viewingFile.name, viewingFile.type)),
-                  viewingFile.name
-                ]),
-                React.createElement('button', {
-                  onClick: () => setViewingFile(null),
-                  style: { background: '#666' }
-                }, '← Back')
-              ]),
-              
-              React.createElement('div', { style: { marginBottom: '15px' } }, [
-                React.createElement('code', { style: { display: 'block', marginBottom: '5px' } }, viewingFile.cdnUrl),
-                React.createElement('code', { style: { display: 'block', background: '#e8f4fd' } }, viewingFile.directUrl)
-              ]),
-              
-              React.createElement('div', { style: { marginBottom: '15px' } }, [
-                React.createElement('button', {
-                  onClick: () => navigator.clipboard.writeText(viewingFile.cdnUrl),
-                  style: { marginRight: '10px' }
-                }, 'Copy CDN URL'),
-                React.createElement('button', {
-                  onClick: () => window.open(viewingFile.directUrl, '_blank'),
-                  className: 'download-btn'
-                }, 'Download File')
-              ]),
-              
-              React.createElement('h4', null, 'File Preview:'),
-              React.createElement('pre', null, fileContent),
-              
-              React.createElement('p', { style: { fontSize: '12px', color: '#666', marginTop: '10px' } },
-                fileContent.length >= 5000 ? '(Preview truncated to 5000 characters)' : ''
-              )
-            ]) :
-            
-            React.createElement('div', { key: 'file-list', className: 'folder-contents', style: { marginTop: '20px' } },
-              files.map(file => 
-                React.createElement('div', {
-                  key: file.id,
-                  className: 'folder-item',
-                  onClick: () => viewFile(file),
-                  style: { cursor: 'pointer' }
-                }, [
-                  React.createElement('div', { style: { fontSize: '24px', marginBottom: '10px' } },
-                    getFileIcon(file.name, file.type)
+          React.createElement('h2', null, '📄 All Uploaded Files'),
+          React.createElement('p', null, \`Total: \${files.length} files\`),
+          ...files.map(file => 
+            React.createElement('div', { 
+              key: file.id,
+              className: 'file-item',
+              style: { border: '1px solid #ddd', padding: '15px', margin: '10px 0', borderRadius: '5px' }
+            }, [
+              React.createElement('div', {style: {display: 'flex', justifyContent: 'space-between', alignItems: 'start'}}, [
+                React.createElement('div', {style: {flex: 1}}, [
+                  React.createElement('strong', null, file.name),
+                  React.createElement('p', {style: {margin: '5px 0', color: '#666', fontSize: '14px'}}, 
+                    \`\${formatSize(file.size)} • \${file.type} • \${new Date(file.updated).toLocaleDateString()}\`
                   ),
-                  React.createElement('strong', { style: { display: 'block', marginBottom: '5px' } }, file.name),
-                  React.createElement('div', { style: { fontSize: '12px', color: '#666' } }, [
-                    React.createElement('div', null, formatSize(file.size)),
-                    React.createElement('div', null, new Date(file.updated).toLocaleDateString()),
-                    React.createElement('div', null, file.type.split('/')[0] || 'file')
-                  ])
+                  React.createElement('code', {style: {display: 'block', background: '#f5f5f5', padding: '5px', margin: '5px 0', fontSize: '12px'}}, 
+                    file.cdnUrl
+                  ),
+                  React.createElement('code', {style: {display: 'block', background: '#e8f4fd', padding: '5px', margin: '5px 0', fontSize: '12px'}}, 
+                    file.directUrl
+                  )
+                ]),
+                React.createElement('div', {style: {display: 'flex', flexDirection: 'column', gap: '5px'}}, [
+                  React.createElement('button', {
+                    onClick: () => copyToClipboard(file.cdnUrl),
+                    style: {background: '#2ecc71', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '4px', fontSize: '14px'}
+                  }, 'Copy CDN URL'),
+                  React.createElement('button', {
+                    onClick: () => copyToClipboard(file.directUrl),
+                    style: {background: '#3498db', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '4px', fontSize: '14px'}
+                  }, 'Copy Direct URL'),
+                  React.createElement('button', {
+                    onClick: () => window.open(file.directUrl, '_blank'),
+                    style: {background: '#9b59b6', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '4px', fontSize: '14px'}
+                  }, 'Open File')
                 ])
-              )
-            )
-        ]);
-      };
-      
-      // Examples Tab - FIXED to use regular strings instead of template literals
-      const ExamplesTab = () => {
-        return React.createElement('div', null, [
-          React.createElement('h2', null, '💡 How to Use This CDN'),
-          
-          React.createElement('div', { style: { margin: '20px 0' } }, [
-            React.createElement('h3', null, '📁 Folder Upload Example:'),
-            React.createElement('pre', null, 
-'project/\n├── index.html\n├── style.css\n├── script.js\n└── images/\n    └── logo.png\n\nUpload the entire folder, then use:\n\n<!-- In HTML -->\n<link rel="stylesheet" href="https://YOUR-CDN/cdn/project/style.css">\n<script src="https://YOUR-CDN/cdn/project/script.js"></script>\n<img src="https://YOUR-CDN/cdn/project/images/logo.png">'
-            ),
-            
-            React.createElement('h3', { style: { marginTop: '30px' } }, '📦 ZIP Package Example:'),
-            React.createElement('pre', null,
-'// Upload a ZIP file containing your library\n// Then users can access individual files:\n\nimport { Component } from \'https://YOUR-CDN/cdn/my-library.zip/Component.js\';\n// Note: ZIP browsing requires extracting on the client side'
-            ),
-            
-            React.createElement('h3', { style: { marginTop: '30px' } }, '🚀 Quick Usage:'),
-            React.createElement('ol', null, [
-              React.createElement('li', null, 'Upload files/folders/ZIPs'),
-              React.createElement('li', null, 'Copy the CDN URL'),
-              React.createElement('li', null, 'Use in your projects:'),
-              React.createElement('li', null, 
-                React.createElement('code', null, '<script src="https://YOUR-CDN/cdn/file.js"></script>')
-              )
+              ])
             ])
-          ])
+          )
         ]);
       };
       
-      // Render the app
+      // Main App Component
+      const App = () => {
+        return React.createElement('div', null, [
+          React.createElement('h1', null, '🚀 CDN Platform - Bulk Upload'),
+          React.createElement('p', null, 'Upload multiple files at once and get CDN URLs instantly'),
+          React.createElement(Upload, null),
+          React.createElement(FileList, null)
+        ]);
+      };
+      
+      // RENDER THE APP
       const rootElement = document.getElementById('root');
       if (rootElement) {
         const root = ReactDOM.createRoot(rootElement);
@@ -685,8 +500,8 @@ async function handleUpload(request, supabase) {
       fileName: file.name,
       size: file.size,
       type: file.type,
-      directUrl: publicUrl,
-      cdnUrl: cdnUrl,
+      directUrl: publicUrl,  // This is the REAL Supabase URL
+      cdnUrl: cdnUrl,        // This is your worker proxy URL
       message: 'File uploaded successfully'
     });
     
@@ -790,11 +605,4 @@ async function handleCDN(path, supabase) {
       headers: { 'Content-Type': 'text/plain' }
     });
   }
-}
-
-async function handleBrowse(path, supabase) {
-  // This would handle ZIP file browsing/extraction
-  // For now, just redirect to the file
-  const fileName = path.replace('/browse/', '');
-  return Response.redirect(`/cdn/${fileName}`, 302);
 }
